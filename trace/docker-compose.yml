@@ -1,0 +1,71 @@
+# RiviumTrace Self-Hosted
+# Error tracking, APM & logs backend
+# Dashboard provided by Rivium Console (separate service)
+# Usage: cp .env.example .env.trace && docker compose -f docker-compose.yml --env-file .env.trace up -d
+
+services:
+  trace-postgres:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rivium_trace}
+      POSTGRES_USER: ${POSTGRES_USER:-rivium}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - trace_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rivium}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  trace-redis:
+    image: redis:7-alpine
+    volumes:
+      - trace_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  trace-api:
+    image: ghcr.io/rivium-co/rivium-trace-selfhosted:${VERSION:-latest}
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - LICENSE_KEY=${LICENSE_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-rivium}:${POSTGRES_PASSWORD:-changeme}@trace-postgres:5432/${POSTGRES_DB:-rivium_trace}
+      - REDIS_URL=redis://trace-redis:6379
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-RiviumTrace <noreply@localhost>}
+      - RIVIUM_TRACE_DOMAIN=${RIVIUM_TRACE_DOMAIN:-http://localhost:3000}
+      - FRONTEND_URL=${RIVIUM_TRACE_DOMAIN:-http://localhost:3000}
+      - CONSOLE_API_URL=${CONSOLE_API_URL:-http://host.docker.internal:3004}
+    ports:
+      - "${API_PORT:-3001}:3001"
+    volumes:
+      - trace_sourcemaps:/app/sourcemaps
+    depends_on:
+      trace-postgres:
+        condition: service_healthy
+      trace-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  trace_postgres_data:
+  trace_redis_data:
+  trace_sourcemaps:

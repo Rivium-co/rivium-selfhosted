@@ -1,0 +1,55 @@
+# Rivium Console Self-Hosted
+# Dashboard for all Rivium self-hosted services
+# Usage: cp .env.example .env && docker compose up -d
+
+services:
+  console-postgres:
+    image: postgres:14-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rivium_console}
+      POSTGRES_USER: ${POSTGRES_USER:-rivium}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - console_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rivium}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  console-api:
+    image: ghcr.io/rivium-co/rivium-console-selfhosted-api:${VERSION:-latest}
+    environment:
+      - NODE_ENV=production
+      - PORT=3004
+      - DB_HOST=console-postgres
+      - DB_PORT=5432
+      - DB_USERNAME=${POSTGRES_USER:-rivium}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - DB_NAME=${POSTGRES_DB:-rivium_console}
+      - JWT_SECRET=${JWT_SECRET:-change-this-secret}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-change-this-refresh-secret}
+      - SKIP_EMAIL_VERIFICATION=true
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+    ports:
+      - "${API_PORT:-3004}:3004"
+    depends_on:
+      console-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  console-dashboard:
+    image: ghcr.io/rivium-co/rivium-console-selfhosted-dashboard:${VERSION:-latest}
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    depends_on:
+      - console-api
+    restart: unless-stopped
+
+volumes:
+  console_postgres_data:
